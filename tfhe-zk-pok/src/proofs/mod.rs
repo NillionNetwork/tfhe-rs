@@ -413,6 +413,8 @@ pub mod index;
 pub mod range;
 #[cfg(feature = "experimental")]
 pub mod rlwe;
+#[cfg(feature = "experimental")]
+pub mod membership;
 
 pub mod pke;
 pub mod pke_v2;
