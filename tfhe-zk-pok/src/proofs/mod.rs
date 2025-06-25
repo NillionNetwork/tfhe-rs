@@ -72,10 +72,10 @@ pub type Affine<Zp, Group> = <Group as CurveGroupOps<Zp>>::Affine;
     serialize = "G: Curve, G::G1: serde::Serialize, G::G2: serde::Serialize"
 ))]
 #[versionize(GroupElementsVersions)]
-pub(crate) struct GroupElements<G: Curve> {
-    pub(crate) g_list: OneBased<Vec<Affine<G::Zp, G::G1>>>,
-    pub(crate) g_hat_list: OneBased<Vec<Affine<G::Zp, G::G2>>>,
-    pub(crate) message_len: usize,
+pub struct GroupElements<G: Curve> {
+    pub g_list: OneBased<Vec<Affine<G::Zp, G::G1>>>,
+    pub g_hat_list: OneBased<Vec<Affine<G::Zp, G::G2>>>,
+    pub message_len: usize,
 }
 
 impl<G: Curve> GroupElements<G> {

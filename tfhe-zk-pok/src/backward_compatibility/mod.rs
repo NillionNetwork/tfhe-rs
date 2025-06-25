@@ -56,13 +56,13 @@ impl Display for IncompleteProof {
 impl Error for IncompleteProof {}
 
 #[derive(VersionsDispatch)]
-pub(crate) enum GroupElementsVersions<G: Curve> {
+pub enum GroupElementsVersions<G: Curve> {
     #[allow(dead_code)]
     V0(GroupElements<G>),
 }
 
 #[derive(VersionsDispatch)]
-pub(crate) enum SerializableGroupElementsVersions {
+pub enum SerializableGroupElementsVersions {
     #[allow(dead_code)]
     V0(SerializableGroupElements),
 }

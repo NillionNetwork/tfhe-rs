@@ -302,9 +302,9 @@ impl From<InvalidSerializedAffineError> for InvalidSerializedGroupElementsError 
 
 #[derive(Serialize, Deserialize, Versionize)]
 #[versionize(SerializableGroupElementsVersions)]
-pub(crate) struct SerializableGroupElements {
-    pub(crate) g_list: Vec<SerializableG1Affine>,
-    pub(crate) g_hat_list: Vec<SerializableG2Affine>,
+pub struct SerializableGroupElements {
+    pub g_list: Vec<SerializableG1Affine>,
+    pub g_hat_list: Vec<SerializableG2Affine>,
 }
 
 impl<G: Curve> From<GroupElements<G>> for SerializableGroupElements

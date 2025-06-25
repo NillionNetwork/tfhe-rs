@@ -3,7 +3,7 @@ use rand::RngCore;
 
 #[derive(Clone, Debug)]
 pub struct PublicParams<G: Curve> {
-    g_lists: GroupElements<G>,
+    pub g_lists: GroupElements<G>,
 }
 
 impl<G: Curve> PublicParams<G> {
@@ -15,26 +15,32 @@ impl<G: Curve> PublicParams<G> {
             g_lists: GroupElements::from_vec(g_list, g_hat_list),
         }
     }
+
+    pub fn from_g_lists(g_lists: GroupElements<G>) -> Self {
+        Self {
+            g_lists,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct PublicCommit<G: Curve> {
-    v_hat: G::G2,  // Commitment to μ
-    c_hat: G::G2,  // Commitment to word
-    k: usize,      // Start index of μ in word
-    l: usize,      // Length of μ
+    pub v_hat: G::G2,  // Commitment to μ
+    pub c_hat: G::G2,  // Commitment to word
+    pub k: usize,      // Start index of μ in word
+    pub l: usize,      // Length of μ
 }
 
 #[derive(Clone, Debug)]
 pub struct PrivateCommit<G: Curve> {
-    r: G::Zp,      // Randomness for v_hat
-    gamma: G::Zp,  // Randomness for c_hat
-    word: Vec<u64>,  // The full binary vector word
+    pub r: G::Zp,      // Randomness for v_hat
+    pub gamma: G::Zp,  // Randomness for c_hat
+    pub word: Vec<u64>,  // The full binary vector word
 }
 
 #[derive(Clone, Debug)]
 pub struct Proof<G: Curve> {
-    pi: G::G1,     // The membership proof
+    pub pi: G::G1,     // The membership proof
 }
 
 pub fn crs_gen<G: Curve>(n: usize, rng: &mut dyn RngCore) -> PublicParams<G> {
@@ -51,26 +57,35 @@ pub fn commit<G: Curve>(
     word: &[u64],
     public: &PublicParams<G>,
     rng: &mut dyn RngCore,
+    gamma: Option<G::Zp>,
+    c_hat: Option<G::G2>,
 ) -> (PublicCommit<G>, PrivateCommit<G>) {
     let g_hat = G::G2::GENERATOR;
     let n = word.len();
     let w = OneBased::new_ref(&*word);
-
-    // Generate randomness
-    let r = G::Zp::rand(rng);     // randomness for v_hat
-    let gamma = G::Zp::rand(rng); // randomness for c_hat
-
+    
     // Compute v_hat = g_hat^r * g_hat_1^μ
+    let r = G::Zp::rand(rng);     // randomness for v_hat
     let v_hat = g_hat.mul_scalar(r) + 
-        G::G2::projective(public.g_lists.g_hat_list[1]).mul_scalar(G::Zp::from_u64(mu));
-
-    // Compute c_hat = g_hat^γ * ∏ g_hat_j^word_j
-    let mut c_hat = g_hat.mul_scalar(gamma);
-    for j in 1..n+1 { // w and g_hat_list start at index 1 and finish at index n
-        if w[j] != 0 {
-            c_hat += G::G2::projective(public.g_lists.g_hat_list[j]);
+    G::G2::projective(public.g_lists.g_hat_list[1]).mul_scalar(G::Zp::from_u64(mu));
+    
+    let gamma = match gamma { // randomness for c_hat
+        Some(gamma) => gamma,
+        None =>G::Zp::rand(rng),
+    };
+    let c_hat = match c_hat {
+        Some(c_hat) => c_hat,
+        None => {
+            // Compute c_hat = g_hat^γ * ∏ g_hat_j^word_j in case it was not provided
+            let mut c_hat = g_hat.mul_scalar(gamma);
+            for j in 1..n+1 { // w and g_hat_list start at index 1 and finish at index n
+                if w[j] != 0 {
+                    c_hat += G::G2::projective(public.g_lists.g_hat_list[j]);
+                }
+            }
+            c_hat
         }
-    }
+    };
 
     (
         PublicCommit { v_hat, c_hat, k, l },
@@ -178,7 +193,7 @@ mod tests {
         
         // Generate CRS and commitments
         let public_params = crs_gen::<crate::curve_api::Bls12_446>(n, rng);
-        let (public_commit, private_commit) = commit(mu, k, l, &word, &public_params, rng);
+        let (public_commit, private_commit) = commit(mu, k, l, &word, &public_params, rng, None, None);
 
         // Generate and verify proof
         let proof = prove((&public_params, &public_commit), &private_commit, rng);
@@ -187,7 +202,7 @@ mod tests {
         // Test with invalid μ
         let invalid_mu = (mu + 1) % (1 << l);
         let (invalid_public_commit, invalid_private_commit) = 
-            commit(invalid_mu, k, l, &word, &public_params, rng);
+            commit(invalid_mu, k, l, &word, &public_params, rng, None, None);
         let invalid_proof = prove(
             (&public_params, &invalid_public_commit),
             &invalid_private_commit,

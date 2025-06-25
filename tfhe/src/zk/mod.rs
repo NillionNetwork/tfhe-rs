@@ -475,6 +475,7 @@ impl CompactPkeCrs {
         metadata: &[u8],
         load: ZkComputeLoad,
         random_generator: &mut RandomGenerator<G>,
+        with_gamma_bin_and_word: Option<bool>,
     ) -> CompactPkeProof
     where
         Scalar: UnsignedInteger,
@@ -586,6 +587,7 @@ impl CompactPkeCrs {
                     metadata,
                     load,
                     &seed,
+                    with_gamma_bin_and_word,
                 );
 
                 CompactPkeProof::PkeV2(proof)

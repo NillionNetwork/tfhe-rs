@@ -2236,6 +2236,7 @@ pub fn encrypt_and_prove_lwe_ciphertext_with_compact_public_key<
     crs: &CompactPkeCrs,
     metadata: &[u8],
     load: ZkComputeLoad,
+    with_gamma_bin_and_word: Option<bool>,
 ) -> crate::Result<CompactPkeProof>
 where
     Scalar: Encryptable<MaskDistribution, NoiseDistribution>
@@ -2261,7 +2262,8 @@ where
         body_noise_distribution,
         crs,
     )?;
-
+    println!("message encoded: {:?}", message.0 * delta);
+    println!("message: {:?}", message.0);
     let CompactPublicKeyRandomVectors {
         binary_random_vector,
         mask_noise,
@@ -2291,6 +2293,7 @@ where
         metadata,
         load,
         random_generator,
+        with_gamma_bin_and_word,
     ))
 }
 
@@ -2766,6 +2769,7 @@ where
         metadata,
         load,
         random_generator,
+        None
     ))
 }
 
@@ -3250,6 +3254,7 @@ where
         metadata,
         load,
         random_generator,
+        None
     ))
 }
 
@@ -3258,6 +3263,285 @@ mod test {
     use crate::core_crypto::commons::generators::DeterministicSeeder;
     use crate::core_crypto::commons::test_tools;
     use crate::core_crypto::prelude::*;
+    use crate::core_crypto::commons::math::random::RandomGenerator;
+    use crate::zk::ZkMSBZeroPaddingBitCount;
+    #[cfg(feature = "experimental")]
+    use tfhe_zk_pok::proofs::membership::{
+        commit as commit_membership, prove as prove_membership, verify as verify_membership,
+        Proof as ProofMembership, PublicCommit as PublicCommitMembership, PublicParams as PublicParamsMembership,
+    };
+
+    use std::fs::{File, OpenOptions};
+    use std::io::{Write, Read};
+    use std::path::Path;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+    use crate::shortint::parameters::v1_2::V1_2_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
+    use crate::shortint::parameters::v1_2::compact_public_key_only::p_fail_2_minus_128::ks_pbs::V1_2_PARAM_PKE_TO_SMALL_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128_ZKV1;
+    use crate::shortint::parameters::v1_2::key_switching::p_fail_2_minus_128::ks_pbs::V1_2_PARAM_KEYSWITCH_PKE_TO_SMALL_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128_ZKV1;
+    use crate::ConfigBuilder::with_custom_parameters;
+
+    fn generate_crs_and_save_to_file(test_file_basic: &str) {
+        // DISCLAIMER: these toy example parameters are not guaranteed to be secure or yield correct
+        // computations
+        // Define parameters for LweCiphertext creation
+        let lwe_dimension = LweDimension(2048);
+        let glwe_noise_distribution: TUniform<u64> = TUniform::new(9);
+        let ciphertext_modulus: CiphertextModulus<u64> = CiphertextModulus::new_native();
+        let delta_log = 59;
+        let delta = 1u64 << delta_log;
+        let msb_zero_padding_bit_count = ZkMSBZeroPaddingBitCount(1);
+        let plaintext_modulus = 1u64 << (64 - delta_log - msb_zero_padding_bit_count.0);
+        // We need the padding bit in the plaintext modulus for the ZK
+        let zk_plaintext_modulus = plaintext_modulus << msb_zero_padding_bit_count.0;
+
+        // Create the PRNG
+        let mut seeder = new_seeder();
+        let seeder = seeder.as_mut();
+        let mut random_generator = RandomGenerator::<DefaultRandomGenerator>::new(seeder.seed());
+
+
+        let params = V1_2_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
+        // Indicate which parameters to use for the Compact Public Key encryption
+        let cpk_params = V1_2_PARAM_PKE_TO_SMALL_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128_ZKV1;
+        // And parameters allowing to keyswitch/cast to the computation parameters.
+        let casting_params = V1_2_PARAM_KEYSWITCH_PKE_TO_SMALL_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128_ZKV1;
+        // Enable the dedicated parameters on the config
+        let config = with_custom_parameters(params)
+            .use_dedicated_compact_public_key_parameters((cpk_params, casting_params)).build();
+
+        // The CRS should be generated in an offline phase then shared to all clients and the server
+        let crs = CompactPkeCrs::from_config(config, 64).unwrap();
+        // Then use TFHE-rs as usual
+        let client_key = crate::ClientKey::generate(config);
+        let server_key = crate::ServerKey::new(&client_key);
+        let public_key = crate::CompactPublicKey::try_new(&client_key).unwrap();
+        // This can be left empty, but if provided allows to tie the proof to arbitrary data
+        let metadata = [b'T', b'F', b'H', b'E', b'-', b'r', b's'];
+
+        let clear_a = rng.gen::<u64>();
+        let clear_b = rng.gen::<u64>();
+
+        let proven_compact_list = crate::ProvenCompactCiphertextList::builder(&public_key)
+            .push(clear_a)
+            .push(clear_b)
+            .build_with_proof_packed(&crs, &metadata, ZkComputeLoad::Verify)?;
+
+
+
+
+
+        let crs = CompactPkeCrs::new(
+            lwe_dimension,
+            LweCiphertextCount(1),
+            glwe_noise_distribution,
+            ciphertext_modulus,
+            zk_plaintext_modulus,
+            msb_zero_padding_bit_count,
+            &mut random_generator,
+        )
+        .unwrap();
+
+        // Test 1: Basic serialization to file
+        let test_file_basic = "test_crs_basic.bin";
+        {
+            // Serialize with compression
+            let serialized_data = bincode::serialize(&crs).unwrap();
+            
+            // Write to file
+            let mut file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(test_file_basic)
+                .unwrap();
+            file.write_all(&serialized_data).unwrap();
+            println!("CRS saved to {} ({} bytes)", test_file_basic, serialized_data.len());
+        }
+        
+    }
+
+    #[cfg(feature = "experimental")]
+    #[test]
+    fn test_compact_public_key_encryption_with_proof() {
+
+        // TODO here:
+        // - add the membership proof at the end.
+
+        // DISCLAIMER: these toy example parameters are not guaranteed to be secure or yield correct
+        // computations
+        // Define parameters for LweCiphertext creation
+        let lwe_dimension = LweDimension(2048); // covered by config
+        let glwe_noise_distribution: TUniform<u64> = TUniform::new(9); // covered by config
+        let ciphertext_modulus: CiphertextModulus<u64> = CiphertextModulus::new_native();
+        let delta_log = 59; 
+        let delta = 1u64 << delta_log;
+        let msb_zero_padding_bit_count = ZkMSBZeroPaddingBitCount(1); // covered by config
+        let plaintext_modulus = 1u64 << (64 - delta_log - msb_zero_padding_bit_count.0); // covered by config
+        // We need the padding bit in the plaintext modulus for the ZK
+        let zk_plaintext_modulus = plaintext_modulus << msb_zero_padding_bit_count.0; // covered by config
+
+        // We can add custom metadata that will be required for verification, allowing to tie the proof
+        // to some arbitrary data.
+        let metadata = [b'T', b'F', b'H', b'E', b'-', b'r', b's'];
+
+        // Create the PRNG
+        let mut seeder = new_seeder();
+        let seeder = seeder.as_mut();
+        let mut encryption_generator =
+            EncryptionRandomGenerator::<DefaultRandomGenerator>::new(seeder.seed(), seeder);
+        let mut secret_generator = SecretRandomGenerator::<DefaultRandomGenerator>::new(seeder.seed());
+        let mut random_generator = RandomGenerator::<DefaultRandomGenerator>::new(seeder.seed());
+
+        // Create the LweSecretKey
+        let lwe_secret_key =
+            allocate_and_generate_new_binary_lwe_secret_key(lwe_dimension, &mut secret_generator);
+
+        let lwe_compact_public_key = allocate_and_generate_new_lwe_compact_public_key(
+            &lwe_secret_key,
+            glwe_noise_distribution,
+            ciphertext_modulus,
+            &mut encryption_generator,
+        );
+
+        // let Deltta = lwe_compact_public_key.encoding()
+        // let crs = CompactPkeCrs::new(
+        //     lwe_dimension,
+        //     LweCiphertextCount(1),
+        //     glwe_noise_distribution,
+        //     ciphertext_modulus,
+        //     zk_plaintext_modulus,
+        //     msb_zero_padding_bit_count,
+        //     &mut random_generator,
+        // )
+        // .unwrap();
+
+        // // Test 1: Basic serialization to file
+        let test_file_basic = "test_crs_basic.bin";
+        // {
+        //     // Serialize with compression
+        //     let serialized_data = bincode::serialize(&crs).unwrap();
+            
+        //     // Write to file
+        //     let mut file = OpenOptions::new()
+        //         .create(true)
+        //         .write(true)
+        //         .truncate(true)
+        //         .open(test_file_basic)
+        //         .unwrap();
+        //     file.write_all(&serialized_data).unwrap();
+        //     println!("CRS saved to {} ({} bytes)", test_file_basic, serialized_data.len());
+        // }
+
+        // // Read back from file and verify
+        // {
+        //     let mut file = File::open(test_file_basic).unwrap();
+        //     let mut buffer = Vec::new();
+        //     file.read_to_end(&mut buffer).unwrap();
+            
+        //     let loaded_crs: CompactPkeCrs = bincode::deserialize(&buffer).unwrap();
+        //     println!("CRS loaded from {} ({} bytes)", test_file_basic, buffer.len());
+            
+        //     // Verify they're functionally equivalent by comparing their serialized forms
+        //     let original_serialized = bincode::serialize(&crs).unwrap();
+        //     let loaded_serialized = bincode::serialize(&loaded_crs).unwrap();
+        //     assert_eq!(original_serialized, loaded_serialized, "CRS serialization roundtrip failed");
+        // }
+
+        let mut file = File::open(test_file_basic).unwrap();
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer).unwrap();
+        
+        let crs: CompactPkeCrs = bincode::deserialize(&buffer).unwrap();
+
+        // Create the plaintext
+        let mu = 11u64;
+        let msg = Cleartext(mu);
+
+        // Create a new LweCiphertext
+        let mut lwe = LweCiphertext::new(0u64, lwe_dimension.to_lwe_size(), ciphertext_modulus);
+
+        let proof = encrypt_and_prove_lwe_ciphertext_with_compact_public_key(
+            &lwe_compact_public_key,
+            &mut lwe,
+            msg,
+            delta,
+            glwe_noise_distribution,
+            glwe_noise_distribution,
+            &mut secret_generator,
+            &mut encryption_generator,
+            &mut random_generator,
+            &crs,
+            &metadata,
+            ZkComputeLoad::Proof,
+            Some(true),
+        )
+        .unwrap();
+
+        let (C_hat_bin, gamma_bin, option_word_bin_u64) = match proof {
+            CompactPkeProof::PkeV2(ref inner) => {
+                (inner.C_hat_bin.clone(), inner.gamma_bin.clone(), inner.word_bin_u64.clone())
+            },
+            _ => {
+                // Handle other cases
+                panic!("Expected PkeV2 proof variant")
+            }
+        };
+        let word_bin_u64 = option_word_bin_u64.expect("word_bin_u64 should not be None");
+        
+        let g_lists = match crs {
+            CompactPkeCrs::PkeV2(ref inner) => {
+                inner.get_g_lists()
+            },
+            _ => {
+                panic!("Expected PkeV2 proof variant")
+            }
+        };
+
+        let public_params: PublicParamsMembership<tfhe_zk_pok::curve_api::Bls12_446> = PublicParamsMembership::from_g_lists(g_lists.clone());
+
+        let rng = &mut StdRng::seed_from_u64(0);
+        let n = 2048 + 4;  // Total length of word
+        let k = 2048;   // Start index of μ in word
+        let l = 4;   // Length of μ
+        let (public_commit, private_commit) = commit_membership(
+            mu, 
+            k, 
+            l, 
+            &word_bin_u64, 
+            &public_params, 
+            rng, 
+            gamma_bin.clone(),
+            Some(C_hat_bin)
+        );
+
+        // Generate and verify proof
+        let membership_proof = prove_membership((&public_params, &public_commit), &private_commit, rng);
+        assert!(verify_membership(&membership_proof, (&public_params, &public_commit)).is_ok());
+
+        // verify the ciphertext list with the proof
+        assert!(
+            verify_lwe_ciphertext(&lwe, &lwe_compact_public_key, &proof, &crs, &metadata).is_valid()
+        );
+
+        let decrypted_plaintext = decrypt_lwe_ciphertext(&lwe_secret_key, &lwe);
+
+        // Round and remove encoding
+        // First create a decomposer working on the high 4 bits corresponding to our encoding.
+        let decomposer = SignedDecomposer::new(
+            DecompositionBaseLog((64 - delta_log) as usize),
+            DecompositionLevelCount(1),
+        );
+
+        let rounded = decomposer.closest_representable(decrypted_plaintext.0);
+
+        // Remove the encoding
+        let cleartext = rounded >> delta_log;
+
+        // Check we recovered the original message
+        assert_eq!(cleartext, msg.0);
+    
+    }
 
     #[test]
     fn test_compact_public_key_encryption() {
