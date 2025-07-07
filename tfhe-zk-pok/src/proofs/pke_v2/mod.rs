@@ -914,9 +914,6 @@ fn prove_impl<G: Curve>(
     let r2 = compute_r2(e2, c2, m, b, r, d, delta, decoded_q);
 
     let u64 = |x: i64| x as u64;
-    println!("r: {:?}", r);
-    println!("r length: {:?}", r.len());
-    println!("m: {:?}", m);
     let w_tilde = r
         .iter()
         .rev()
@@ -926,8 +923,6 @@ fn prove_impl<G: Curve>(
                 .flat_map(|&m| bit_iter(u64(m), effective_cleartext_t.ilog2())),
         )
         .collect::<Box<[_]>>();
-    println!("w_tilde: {:?}", w_tilde);
-    println!("w_tilde length: {:?}", w_tilde.len());
 
     let v = four_squares(B_squared - e_sqr_norm).map(|v| v as i64);
 
@@ -1043,7 +1038,6 @@ fn prove_impl<G: Curve>(
         .copied()
         .chain(w_R_bin.iter().copied())
         .collect::<Box<[_]>>();
-    println!("w_bin: {:?}", w_bin);
 
     let C_hat_bin = g_hat.mul_scalar(gamma_bin)
         + g_hat_list
@@ -2126,7 +2120,6 @@ mod tests {
         let effective_cleartext_t = t >> msbs_zero_padding_bit_count;
 
         let seed = thread_rng().gen();
-        println!("pkev2 seed: {seed:x}");
         let rng = &mut StdRng::seed_from_u64(seed);
 
         let testcase = PkeTestcase::gen(rng, PKEV2_TEST_PARAMS);
@@ -2478,7 +2471,6 @@ mod tests {
         } = PKEV2_TEST_PARAMS;
 
         let seed = thread_rng().gen();
-        println!("pkev2_bad_noise seed: {seed:x}");
         let rng = &mut StdRng::seed_from_u64(seed);
 
         let testcase = PkeTestcase::gen(rng, PKEV2_TEST_PARAMS);
@@ -2611,7 +2603,6 @@ mod tests {
         let effective_cleartext_t = t >> msbs_zero_padding_bit_count;
 
         let seed = thread_rng().gen();
-        println!("pkev2_w_padding_fail_verify seed: {seed:x}");
         let rng = &mut StdRng::seed_from_u64(seed);
 
         let mut testcase = PkeTestcase::gen(rng, PKEV2_TEST_PARAMS);
@@ -2674,7 +2665,6 @@ mod tests {
         let effective_cleartext_t = t >> msbs_zero_padding_bit_count;
 
         let seed = thread_rng().gen();
-        println!("pkev2_bad_ct seed: {seed:x}");
         let rng = &mut StdRng::seed_from_u64(seed);
 
         let testcase = PkeTestcase::gen(rng, PKEV2_TEST_PARAMS_SINGLE);
@@ -2799,7 +2789,6 @@ mod tests {
         let effective_cleartext_t = t >> msbs_zero_padding_bit_count;
 
         let seed = thread_rng().gen();
-        println!("pkev2_bad_delta seed: {seed:x}");
         let rng = &mut StdRng::seed_from_u64(seed);
 
         let testcase = PkeTestcase::gen(rng, PKEV2_TEST_PARAMS);
@@ -2835,7 +2824,6 @@ mod tests {
     #[test]
     fn test_big_params() {
         let seed = thread_rng().gen();
-        println!("pkev2_big_params seed: {seed:x}");
         let rng = &mut StdRng::seed_from_u64(seed);
 
         for bound in [Bound::CS, Bound::GHL] {
@@ -2886,7 +2874,6 @@ mod tests {
         } = PKEV2_TEST_PARAMS;
 
         let seed = thread_rng().gen();
-        println!("pkev2_proof_compression seed: {seed:x}");
         let rng = &mut StdRng::seed_from_u64(seed);
 
         let testcase = PkeTestcase::gen(rng, PKEV2_TEST_PARAMS);
@@ -2939,7 +2926,6 @@ mod tests {
         } = PKEV2_TEST_PARAMS;
 
         let seed = thread_rng().gen();
-        println!("pkev2_crs_usable seed: {seed:x}");
         let rng = &mut StdRng::seed_from_u64(seed);
 
         let crs_k = k + 1 + (rng.gen::<usize>() % (d - k));
@@ -2972,7 +2958,6 @@ mod tests {
         } = PKEV2_TEST_PARAMS;
 
         let seed = thread_rng().gen();
-        println!("pkev2_proof_usable seed: {seed:x}");
         let rng = &mut StdRng::seed_from_u64(seed);
 
         let testcase = PkeTestcase::gen(rng, PKEV2_TEST_PARAMS);

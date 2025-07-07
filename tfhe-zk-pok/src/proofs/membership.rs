@@ -57,6 +57,7 @@ pub fn commit<G: Curve>(
     word: &[u64],
     public: &PublicParams<G>,
     rng: &mut dyn RngCore,
+    r: Option<G::Zp>,
     gamma: Option<G::Zp>,
     c_hat: Option<G::G2>,
 ) -> (PublicCommit<G>, PrivateCommit<G>) {
@@ -65,7 +66,10 @@ pub fn commit<G: Curve>(
     let w = OneBased::new_ref(&*word);
     
     // Compute v_hat = g_hat^r * g_hat_1^μ
-    let r = G::Zp::rand(rng);     // randomness for v_hat
+    let r = match r { // randomness for v_hat
+        Some(r) => r,
+        None => G::Zp::rand(rng),
+    };
     let v_hat = g_hat.mul_scalar(r) + 
     G::G2::projective(public.g_lists.g_hat_list[1]).mul_scalar(G::Zp::from_u64(mu));
     
@@ -170,15 +174,11 @@ mod tests {
         let n = 16;  // Total length of word
         let k = 4;   // Start index of μ in word
         let l = 8;   // Length of μ
-        println!("n: {}, k: {}, l: {}", n, k, l);
 
         // Generate a random μ and its binary representation
         let max = (1u64 << l) - 1;
         let mu = rand::thread_rng().gen_range(0..=max);
-        println!("mu: {}", mu);
         let mu_bits: Vec<u64> = (0..l).map(|i| (mu >> i) & 1).collect();
-        println!("mu_bits: {:?}", mu_bits);
-
 
         // Generate a random binary vector word
         let mut word = vec![0u64; n];
@@ -189,11 +189,10 @@ mod tests {
         for i in 0..l {
             word[k + i] = mu_bits[i];
         }
-        println!("word: {:?}", word);
         
         // Generate CRS and commitments
         let public_params = crs_gen::<crate::curve_api::Bls12_446>(n, rng);
-        let (public_commit, private_commit) = commit(mu, k, l, &word, &public_params, rng, None, None);
+        let (public_commit, private_commit) = commit(mu, k, l, &word, &public_params, rng, None, None, None);
 
         // Generate and verify proof
         let proof = prove((&public_params, &public_commit), &private_commit, rng);
@@ -202,7 +201,7 @@ mod tests {
         // Test with invalid μ
         let invalid_mu = (mu + 1) % (1 << l);
         let (invalid_public_commit, invalid_private_commit) = 
-            commit(invalid_mu, k, l, &word, &public_params, rng, None, None);
+            commit(invalid_mu, k, l, &word, &public_params, rng, None, None, None);
         let invalid_proof = prove(
             (&public_params, &invalid_public_commit),
             &invalid_private_commit,
