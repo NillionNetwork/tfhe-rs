@@ -1,6 +1,6 @@
 use super::*;
 use rand::RngCore;
-
+use serde::{Serialize, Deserialize};
 #[derive(Clone, Debug)]
 pub struct PublicParams<G: Curve> {
     pub g_lists: GroupElements<G>,
@@ -23,7 +23,7 @@ impl<G: Curve> PublicParams<G> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PublicCommit<G: Curve> {
     pub v_hat: G::G2,  // Commitment to μ
     pub c_hat: G::G2,  // Commitment to word
@@ -38,7 +38,7 @@ pub struct PrivateCommit<G: Curve> {
     pub word: Vec<u64>,  // The full binary vector word
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Proof<G: Curve> {
     pub pi: G::G1,     // The membership proof
 }
