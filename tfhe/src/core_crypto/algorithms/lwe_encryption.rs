@@ -2262,8 +2262,7 @@ where
         body_noise_distribution,
         crs,
     )?;
-    println!("message encoded: {:?}", message.0 * delta);
-    println!("message: {:?}", message.0);
+
     let CompactPublicKeyRandomVectors {
         binary_random_vector,
         mask_noise,

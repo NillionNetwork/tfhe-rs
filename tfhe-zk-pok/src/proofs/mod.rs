@@ -15,7 +15,7 @@ use tfhe_versionable::Versionize;
 
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize, Versionize)]
 #[repr(transparent)]
-pub(crate) struct OneBased<T: ?Sized>(T);
+pub struct OneBased<T: ?Sized>(T);
 
 /// The proving scheme is available in 2 versions, one that puts more load on the prover and one
 /// that puts more load on the verifier
