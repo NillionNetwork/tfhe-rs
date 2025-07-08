@@ -41,6 +41,7 @@ fn bench_pke_v2_prove(c: &mut Criterion) {
                     &metadata,
                     load,
                     &seed.to_le_bytes(),
+                    None
                 )
             })
         });
@@ -81,6 +82,7 @@ fn bench_pke_v2_verify(c: &mut Criterion) {
             &metadata,
             load,
             &seed.to_le_bytes(),
+            None
         );
 
         bench_group.bench_function(&bench_id, |b| {

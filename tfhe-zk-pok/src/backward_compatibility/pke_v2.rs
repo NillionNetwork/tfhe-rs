@@ -51,6 +51,8 @@ impl<G: Curve> Upgrade<Proof<G>> for ProofV0<G> {
             pi: self.pi,
             pi_kzg: self.pi_kzg,
             compute_load_proof_fields,
+            gamma_bin: None,
+            word_bin_u64: None,
         })
     }
 }

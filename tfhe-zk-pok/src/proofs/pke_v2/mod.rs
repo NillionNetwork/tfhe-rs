@@ -35,7 +35,7 @@ fn bit_iter(x: u64, nbits: u32) -> impl Iterator<Item = bool> {
 )]
 #[versionize(try_convert = SerializablePKEv2PublicParams)]
 pub struct PublicParams<G: Curve> {
-    pub(crate) g_lists: GroupElements<G>,
+    pub g_lists: GroupElements<G>,
     pub(crate) D: usize,
     pub n: usize,
     pub d: usize,
@@ -344,14 +344,18 @@ impl<G: Curve> PublicParams<G> {
     pub fn is_usable(&self) -> bool {
         self.g_lists.is_valid(self.n)
     }
+
+    pub fn get_g_lists(&self) -> &GroupElements<G> {
+        &self.g_lists
+    }
 }
 
 /// This represents a proof that the given ciphertext is a valid encryptions of the input messages
 /// with the provided public key.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, Versionize)]
 #[serde(bound(
-    deserialize = "G: Curve, G::G1: serde::Deserialize<'de>, G::G2: serde::Deserialize<'de>",
-    serialize = "G: Curve, G::G1: serde::Serialize, G::G2: serde::Serialize"
+    deserialize = "G: Curve, G::G1: serde::Deserialize<'de>, G::G2: serde::Deserialize<'de>, G::Zp: serde::Deserialize<'de>",
+    serialize = "G: Curve, G::G1: serde::Serialize, G::G2: serde::Serialize, G::Zp: serde::Serialize"
 ))]
 #[versionize(ProofVersions)]
 pub struct Proof<G: Curve> {
@@ -359,7 +363,7 @@ pub struct Proof<G: Curve> {
     pub(crate) C_e: G::G1,
     pub(crate) C_r_tilde: G::G1,
     pub(crate) C_R: G::G1,
-    pub(crate) C_hat_bin: G::G2,
+    pub C_hat_bin: G::G2,
     pub(crate) C_y: G::G1,
     pub(crate) C_h1: G::G1,
     pub(crate) C_h2: G::G1,
@@ -368,6 +372,13 @@ pub struct Proof<G: Curve> {
     pub(crate) pi_kzg: G::G1,
 
     pub(crate) compute_load_proof_fields: Option<ComputeLoadProofFields<G>>,
+    /// Security consideration:
+    ///     (!) The following two values should never be revealed to    (!) 
+    ///     (!) the Verifier. They are only used to generate the vector (!)
+    ///     (!) commitment within the proof. They are being exposed     (!)
+    ///     (!) as they are required within the membership proof.       (!)
+    pub gamma_bin: Option<G::Zp>,
+    pub word_bin_u64: Option<Vec<u64>>,
 }
 
 impl<G: Curve> Proof<G> {
@@ -390,6 +401,7 @@ impl<G: Curve> Proof<G> {
             pi,
             pi_kzg,
             ref compute_load_proof_fields,
+            ..
         } = self;
 
         C_hat_e.validate_projective()
@@ -497,6 +509,7 @@ where
             pi,
             pi_kzg,
             compute_load_proof_fields,
+            ..
         } = self;
 
         CompressedProof {
@@ -562,6 +575,8 @@ where
             } else {
                 None
             },
+            gamma_bin: None,
+            word_bin_u64: None,
         })
     }
 }
@@ -805,6 +820,7 @@ pub fn prove<G: Curve>(
     metadata: &[u8],
     load: ComputeLoad,
     seed: &[u8],
+    with_gamma_bin_and_word: Option<bool>,
 ) -> Proof<G> {
     prove_impl(
         public,
@@ -813,6 +829,7 @@ pub fn prove<G: Curve>(
         load,
         seed,
         ProofSanityCheckMode::Panic,
+        with_gamma_bin_and_word,
     )
 }
 
@@ -823,6 +840,7 @@ fn prove_impl<G: Curve>(
     load: ComputeLoad,
     seed: &[u8],
     sanity_check_mode: ProofSanityCheckMode,
+    with_gamma_bin_and_word: Option<bool>,
 ) -> Proof<G> {
     _ = load;
     let (
@@ -896,7 +914,6 @@ fn prove_impl<G: Curve>(
     let r2 = compute_r2(e2, c2, m, b, r, d, delta, decoded_q);
 
     let u64 = |x: i64| x as u64;
-
     let w_tilde = r
         .iter()
         .rev()
@@ -1554,6 +1571,14 @@ fn prove_impl<G: Curve>(
     }
 
     let pi_kzg = g.mul_scalar(q[0]) + G::G1::multi_mul_scalar(&g_list[..n - 1], &q[1..n]);
+    
+    let (gamma_bin, word_bin_u64) = match with_gamma_bin_and_word {
+        Some(true) => {
+            let word_bin_u64: Vec<u64> = w_bin.iter().map(|&b| b as u64).collect();
+            (Some(gamma_bin), Some(word_bin_u64))
+        }
+        _ => (None, None),
+    };
 
     Proof {
         C_hat_e,
@@ -1568,6 +1593,8 @@ fn prove_impl<G: Curve>(
         pi,
         pi_kzg,
         compute_load_proof_fields,
+        gamma_bin,
+        word_bin_u64,
     }
 }
 
@@ -1703,6 +1730,7 @@ pub fn verify_impl<G: Curve>(
         pi,
         pi_kzg,
         ref compute_load_proof_fields,
+        ..
     } = proof;
 
     let pairing = G::Gt::pairing;
@@ -2092,7 +2120,6 @@ mod tests {
         let effective_cleartext_t = t >> msbs_zero_padding_bit_count;
 
         let seed = thread_rng().gen();
-        println!("pkev2 seed: {seed:x}");
         let rng = &mut StdRng::seed_from_u64(seed);
 
         let testcase = PkeTestcase::gen(rng, PKEV2_TEST_PARAMS);
@@ -2180,6 +2207,7 @@ mod tests {
                     &testcase.metadata,
                     load,
                     &seed.to_le_bytes(),
+                    None
                 );
 
                 let verify_metadata = if use_fake_metadata_verify {
@@ -2227,6 +2255,7 @@ mod tests {
             load,
             seed,
             sanity_check_mode,
+            None
         );
 
         if verify(&proof, (crs, &public_commit), &testcase.metadata).is_ok() {
@@ -2442,7 +2471,6 @@ mod tests {
         } = PKEV2_TEST_PARAMS;
 
         let seed = thread_rng().gen();
-        println!("pkev2_bad_noise seed: {seed:x}");
         let rng = &mut StdRng::seed_from_u64(seed);
 
         let testcase = PkeTestcase::gen(rng, PKEV2_TEST_PARAMS);
@@ -2575,7 +2603,6 @@ mod tests {
         let effective_cleartext_t = t >> msbs_zero_padding_bit_count;
 
         let seed = thread_rng().gen();
-        println!("pkev2_w_padding_fail_verify seed: {seed:x}");
         let rng = &mut StdRng::seed_from_u64(seed);
 
         let mut testcase = PkeTestcase::gen(rng, PKEV2_TEST_PARAMS);
@@ -2638,7 +2665,6 @@ mod tests {
         let effective_cleartext_t = t >> msbs_zero_padding_bit_count;
 
         let seed = thread_rng().gen();
-        println!("pkev2_bad_ct seed: {seed:x}");
         let rng = &mut StdRng::seed_from_u64(seed);
 
         let testcase = PkeTestcase::gen(rng, PKEV2_TEST_PARAMS_SINGLE);
@@ -2728,6 +2754,7 @@ mod tests {
                 &testcase.metadata,
                 load,
                 &seed.to_le_bytes(),
+                None
             );
 
             assert!(verify(
@@ -2762,7 +2789,6 @@ mod tests {
         let effective_cleartext_t = t >> msbs_zero_padding_bit_count;
 
         let seed = thread_rng().gen();
-        println!("pkev2_bad_delta seed: {seed:x}");
         let rng = &mut StdRng::seed_from_u64(seed);
 
         let testcase = PkeTestcase::gen(rng, PKEV2_TEST_PARAMS);
@@ -2798,7 +2824,6 @@ mod tests {
     #[test]
     fn test_big_params() {
         let seed = thread_rng().gen();
-        println!("pkev2_big_params seed: {seed:x}");
         let rng = &mut StdRng::seed_from_u64(seed);
 
         for bound in [Bound::CS, Bound::GHL] {
@@ -2849,7 +2874,6 @@ mod tests {
         } = PKEV2_TEST_PARAMS;
 
         let seed = thread_rng().gen();
-        println!("pkev2_proof_compression seed: {seed:x}");
         let rng = &mut StdRng::seed_from_u64(seed);
 
         let testcase = PkeTestcase::gen(rng, PKEV2_TEST_PARAMS);
@@ -2878,6 +2902,7 @@ mod tests {
                 &testcase.metadata,
                 load,
                 &seed.to_le_bytes(),
+                None
             );
 
             let compressed_proof = bincode::serialize(&proof.compress()).unwrap();
@@ -2901,7 +2926,6 @@ mod tests {
         } = PKEV2_TEST_PARAMS;
 
         let seed = thread_rng().gen();
-        println!("pkev2_crs_usable seed: {seed:x}");
         let rng = &mut StdRng::seed_from_u64(seed);
 
         let crs_k = k + 1 + (rng.gen::<usize>() % (d - k));
@@ -2934,7 +2958,6 @@ mod tests {
         } = PKEV2_TEST_PARAMS;
 
         let seed = thread_rng().gen();
-        println!("pkev2_proof_usable seed: {seed:x}");
         let rng = &mut StdRng::seed_from_u64(seed);
 
         let testcase = PkeTestcase::gen(rng, PKEV2_TEST_PARAMS);
@@ -2963,6 +2986,7 @@ mod tests {
                 &testcase.metadata,
                 load,
                 &seed.to_le_bytes(),
+                None
             );
 
             let compressed_proof = bincode::serialize(&valid_proof.compress()).unwrap();

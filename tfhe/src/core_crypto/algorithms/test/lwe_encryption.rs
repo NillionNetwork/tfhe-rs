@@ -1078,6 +1078,7 @@ fn lwe_compact_public_encrypt_prove_verify_decrypt_custom_mod<Scalar>(
                     crs,
                     &metadata,
                     ZkComputeLoad::Proof,
+                    None,
                 )
                 .unwrap();
 

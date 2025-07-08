@@ -118,7 +118,7 @@ pbs-stats = []
 noise-asserts = []
 
 # Experimental section
-experimental = []
+experimental = ["tfhe-zk-pok?/experimental"]
 experimental-force_fft_algo_dif4 = []
 # End experimental section
 
